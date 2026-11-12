@@ -21,6 +21,11 @@
                                     THROWS if the CO cannot be created (transition no longer succeeds
                                     without a CO)
                                   * INITIATE_CO requires an approved CR (toggle: REQUIRE_APPROVAL_FOR_CO)
+                11/11/2026      NM 2.01 - Fix RETURN_TO_CR_REVIEW:
+                                  "InvalidFieldValueException: Can only set Parts from Parts, DMS IDs, or
+                                  Descriptors" was caused by item.CHANGE_ORDER = [] (item-link fields reject
+                                  arrays). Added clearLinkField()/clearListField() and used them in
+                                  reset(), REJECT_RETURN and returnFromCO().
                 
 **************************************************************************** **/
 
@@ -79,19 +84,19 @@ switch (customTransID) {
         item.RESULT = "Cancelled";
         item.STEP = 0;
         break;
-        
+
     case 'RETURN_FROM_REVIEW':      // Review & Impact Analysis -> Create
         item.STEP = 1;
-    break;
+        break;
 
     case 'SHELVE':                  // Review & Impact Analysis -> Shelved
         item.STEP = -1;
         break;
-    
+
     case 'REEVALUATE':              // Shelved -> Review & Impact Analysis
         item.STEP = 2;
-        break;    
-    
+        break;
+
     case 'UPDATE_AFFECTED_ITEMS_1':
     case 'UPDATE_AFFECTED_ITEMS_2':
         callIfDefined('updateStockSuppliesOrders');
@@ -163,8 +168,8 @@ switch (customTransID) {
         break;
 
     case 'REJECT_RETURN':
-        item.APPROVED_BY = [];
-        item.REMAINING_APPROVERS = [];
+        clearListField(item, "APPROVED_BY");
+        clearListField(item, "REMAINING_APPROVERS");
         item.STEP = 2;
         break;
 
@@ -209,9 +214,9 @@ function reset() {
     for (var i = 0; i < toReset.length; i++) resetFieldSafe(toReset[i]);
 
     var crApprField = crApproversField();
-    if (crApprField) item[crApprField] = [];
-    item.APPROVED_BY         = [];
-    item.REMAINING_APPROVERS = [];
+    if (crApprField) clearListField(item, crApprField);
+    clearListField(item, "APPROVED_BY");
+    clearListField(item, "REMAINING_APPROVERS");
 }
 
 function completeReview() {
@@ -289,7 +294,7 @@ function submitToCCB() {
     setKPISafe("CCB_REVIEW_SKIPPED", "No");
     setKPIRoundCountSafe('CCB');
 
-    item.APPROVED_BY = [];
+    clearListField(item, "APPROVED_BY");
     item.RESULT = null;
 
     var crApprField = crApproversField();
@@ -442,6 +447,7 @@ function getTotalEffort() {
 function returnFromCO() {
     var cos = toList(item.CHANGE_ORDER);
 
+    // Unlink this CR from each CO first (while the CR -> CO link still exists)
     for (var k = 0; k < cos.length; k++) {
         var co = cos[k];
         if (!co) continue;
@@ -455,23 +461,61 @@ function returnFromCO() {
                 for (var i = 0; i < list.length; i++) {
                     if (idOf(list[i]) !== idOf(item)) keep.push(list[i]);
                 }
-                co.CHANGE_REQUESTS = keep;
+                if (keep.length > 0) {
+                    co.CHANGE_REQUESTS = keep;
+                } else {
+                    // Link fields reject [] -> clear them with null instead
+                    co.CHANGE_REQUESTS = null;
+                }
             }
         } catch (e) {
             println("Notice: could not unlink CR from " + describe(co) + ": " + e.message);
         }
     }
 
-    item.APPROVAL_DATE       = null;
-    item.APPROVED_BY         = [];
-    item.REMAINING_APPROVERS = [];
-    item.CHANGE_ORDER        = [];
-    item.RESULT              = null;
+    item.APPROVAL_DATE = null;
+    clearLinkField(item, "CHANGE_ORDER");      // was: item.CHANGE_ORDER = []  (caused the exception)
+    clearListField(item, "APPROVED_BY");
+    clearListField(item, "REMAINING_APPROVERS");
+    item.RESULT = null;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Clear an item-link field. Link fields only accept an item, a DMS ID or a descriptor,
+ * so assigning [] throws "Can only set Parts from Parts, DMS IDs, or Descriptors".
+ * Multi-select links are emptied entry by entry; single links are set to null.
+ */
+function clearLinkField(target, fieldId) {
+    try {
+        var field = target[fieldId];
+        if (field === null || field === undefined) return;
+        if (typeof field.remove === 'function') {
+            var list = toList(field);
+            for (var i = list.length - 1; i >= 0; i--) field.remove(list[i]);
+        } else {
+            target[fieldId] = null;
+        }
+    } catch (e) {
+        println("Notice: could not clear " + fieldId + ": " + e.message);
+    }
+}
+
+/**
+ * Clear a list field (e.g. user pick lists). Tries the plain [] assignment first and
+ * falls back to clearLinkField() if the field turns out to be an item link.
+ */
+function clearListField(target, fieldId) {
+    try {
+        if (target[fieldId] === undefined) return;
+        target[fieldId] = [];
+    } catch (e) {
+        clearLinkField(target, fieldId);
+    }
+}
 
 /** Call a Change Management Library function if it exists; log (not swallow) any error. */
 function callIfDefined(fnName, args) {
