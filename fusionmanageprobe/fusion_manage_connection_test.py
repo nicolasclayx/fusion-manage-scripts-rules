@@ -2,6 +2,8 @@
 """
 Fusion Manage connection test (read-only).
 
+This file is used for verifying Fusion Manage REST API connection.
+
 Signs you in to Autodesk with PKCE (no client secret), then asks your Fusion Manage tenant for its
 workspace list. It tells you whether the tenant accepts your APS app and which URL style works.
 

@@ -1,1 +1,0 @@
-this file is used for verifying Fusion Manage REST API connection.
