@@ -10,7 +10,8 @@
     Imports:                    Change Management Library (optional; every call is guarded)
 
     Revisions:  10/02/2026      NM 1.01 - Initial
-                11/07/2026      NM 1.02 - Auto-assign COORDINATOR; seed CHANGE_TEMPLATE/target dates for CO onCreate
+                ...             (see prior versions)
+                11/07/2026      NM 1.10 - Auto-assign COORDINATOR; seed CHANGE_TEMPLATE/target dates for CO onCreate
                 11/07/2026      NM 2.00 - Rewrite:
                                   * Current user resolved via getUserName()/userID (the 'user' variable
                                     is not defined, which silently broke approvals and coordinator)
@@ -20,6 +21,7 @@
                                     THROWS if the CO cannot be created (transition no longer succeeds
                                     without a CO)
                                   * INITIATE_CO requires an approved CR (toggle: REQUIRE_APPROVAL_FOR_CO)
+                
 **************************************************************************** **/
 
 // ---------------------------------------------------------------------------
@@ -73,10 +75,23 @@ switch (customTransID) {
     case 'CANCEL_3':
         callIfDefined('saveCancellationDetails');
         callIfDefined('cancelChangeTasks');
+        if (!item.CANCELLATION_DATE) saveDateSafe("CANCELLATION_DATE");   // fallback so the bar always shows cancelled
         item.RESULT = "Cancelled";
         item.STEP = 0;
         break;
+        
+    case 'RETURN_FROM_REVIEW':      // Review & Impact Analysis -> Create
+        item.STEP = 1;
+    break;
 
+    case 'SHELVE':                  // Review & Impact Analysis -> Shelved
+        item.STEP = -1;
+        break;
+    
+    case 'REEVALUATE':              // Shelved -> Review & Impact Analysis
+        item.STEP = 2;
+        break;    
+    
     case 'UPDATE_AFFECTED_ITEMS_1':
     case 'UPDATE_AFFECTED_ITEMS_2':
         callIfDefined('updateStockSuppliesOrders');
