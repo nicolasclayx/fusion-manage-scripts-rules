@@ -26,7 +26,6 @@
                                   Descriptors" was caused by item.CHANGE_ORDER = [] (item-link fields reject
                                   arrays). Added clearLinkField()/clearListField() and used them in
                                   reset(), REJECT_RETURN and returnFromCO().
-                
 **************************************************************************** **/
 
 // ---------------------------------------------------------------------------
@@ -79,12 +78,13 @@ switch (customTransID) {
     case 'CANCEL_2':
     case 'CANCEL_3':
         callIfDefined('saveCancellationDetails');
+        saveCancellationFallback();          // <-- NEW: fills Cancellation Details if the library did not
         callIfDefined('cancelChangeTasks');
-        if (!item.CANCELLATION_DATE) saveDateSafe("CANCELLATION_DATE");   // fallback so the bar always shows cancelled
+        if (!item.CANCELLATION_DATE) saveDateSafe("CANCELLATION_DATE");
         item.RESULT = "Cancelled";
         item.STEP = 0;
         break;
-
+        
     case 'RETURN_FROM_REVIEW':      // Review & Impact Analysis -> Create
         item.STEP = 1;
         break;
@@ -630,6 +630,51 @@ function saveApprovalSafe(approvedByField, remainingField) {
         if (remaining.indexOf(me) !== -1) item[remainingField].remove(me);
     } catch (e) {
         println("Warning: could not record approval for " + me + ": " + e.message);
+    }
+}
+
+
+/**
+ * Fills Cancellation Details when the Change Management Library is not imported or did not fill them.
+ * Only empty fields are written. Everything is guarded and logged so a problem never blocks the cancel.
+ */
+function saveCancellationFallback() {
+    // Cancelled By: the user performing the transition ("Last, First", same format as COORDINATOR)
+    try {
+        if (item.CANCELLED_BY !== undefined && toList(item.CANCELLED_BY).length === 0) {
+            var me = getCurrentUserName();
+            if (me) item.CANCELLED_BY = me;
+        }
+    } catch (eBy) {
+        println("Notice: CANCELLED_BY not set: " + eBy.message);
+    }
+
+    // Cancelled In Status: derived from which cancel transition ran
+    try {
+        if (item.CANCELLED_IN_STATUS !== undefined && !item.CANCELLED_IN_STATUS) {
+            var statusByTransition = {
+                'CANCEL_1': 'Create',
+                'CANCEL_2': 'Review & Impact Analysis'
+            };
+            if (statusByTransition[customTransID]) item.CANCELLED_IN_STATUS = statusByTransition[customTransID];
+        }
+    } catch (eStatus) {
+        println("Notice: CANCELLED_IN_STATUS not set: " + eStatus.message);
+    }
+
+    // Cancellation Comments: the comment entered on the transition
+    try {
+        if (item.CANCELLATION_COMMENTS !== undefined && !item.CANCELLATION_COMMENTS) {
+            var actions = item.workflowActions;
+            println("Cancel fallback: workflowActions = " + (actions ? actions.length : "none"));
+            if (actions && actions.length > 0 && actions[0].comments) {
+                item.CANCELLATION_COMMENTS = actions[0].comments;
+            } else {
+                println("Notice: no transition comment found on workflowActions[0].");
+            }
+        }
+    } catch (eComm) {
+        println("Notice: CANCELLATION_COMMENTS not set: " + eComm.message);
     }
 }
 
