@@ -95,6 +95,7 @@ switch (customTransID) {
 
     case 'REEVALUATE':              // Shelved -> Review & Impact Analysis
         item.STEP = 2;
+        item.RESULT = null;
         break;
 
     case 'UPDATE_AFFECTED_ITEMS_1':
